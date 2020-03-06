@@ -57,9 +57,9 @@ func (w *WebsocketHolder) Join(channel string) error {
 	// Join Room
 	w.WS.SetWriteDeadline(time.Now().Add(time.Minute * 2))
 	join := "JOIN #" + channel + "\r\n"
-	util.Config.Log.Debugln("Join Command: ", join)
+	util.AppService.Log.Debugln("Join Command: ", join)
 	joinByte := []byte(join)
-	util.Config.Log.Debugln("Join Command Bytes: ", join)
+	util.AppService.Log.Debugln("Join Command Bytes: ", join)
 	err := w.WS.WriteMessage(websocket.TextMessage, joinByte)
 	return err
 }
@@ -85,17 +85,17 @@ func (w *WebsocketHolder) Connect(oauthToken, username string) (err error) {
 		for {
 			select {
 			case <-w.Done:
-				util.Config.Log.Warnln("Done got closed")
-				util.Config.Log.Warnln("Closing old WS")
+				util.AppService.Log.Warnln("Done got closed")
+				util.AppService.Log.Warnln("Closing old WS")
 				w.WS.SetWriteDeadline(time.Now().Add(time.Minute * 2))
 				grerr := w.WS.Close()
 				if grerr != nil {
-					util.Config.Log.Errorln(grerr)
+					util.AppService.Log.Errorln(grerr)
 					// TODO fix properly so this can exit
 				}
-				util.Config.Log.Warnf("%s died\n", w.TRoom)
-				util.Config.Log.Warnln("Reconnecting WS...")
-				util.Config.Log.Warnln("Replacing Websocket Holder")
+				util.AppService.Log.Warnf("%s died\n", w.TRoom)
+				util.AppService.Log.Warnln("Reconnecting WS...")
+				util.AppService.Log.Warnln("Replacing Websocket Holder")
 				*w = WebsocketHolder{
 					Done:        make(chan struct{}),
 					TwitchRooms: w.TwitchRooms,
@@ -104,17 +104,17 @@ func (w *WebsocketHolder) Connect(oauthToken, username string) (err error) {
 					Users:       w.Users,
 					TRoom:       w.TRoom,
 				}
-				util.Config.Log.Warnln("Start WS Connection")
+				util.AppService.Log.Warnln("Start WS Connection")
 				grerr = w.Connect(oauthToken, username)
 				if grerr != nil {
-					util.Config.Log.Errorln(grerr)
+					util.AppService.Log.Errorln(grerr)
 					return
 				}
 				if w.TRoom != "" {
-					util.Config.Log.Warnln("ReJoin Room")
+					util.AppService.Log.Warnln("ReJoin Room")
 					grerr = w.Join(w.TRoom)
 					if grerr != nil {
-						util.Config.Log.Errorln(grerr)
+						util.AppService.Log.Errorln(grerr)
 						return
 					}
 				}
@@ -175,11 +175,11 @@ func (w *WebsocketHolder) Listen() {
 		for {
 			_, message, err := w.WS.ReadMessage()
 			if err != nil {
-				util.Config.Log.Errorln(err)
+				util.AppService.Log.Errorln(err)
 				return
 			}
 
-			util.Config.Log.Debugf("recv: %s\n", message)
+			util.AppService.Log.Debugf("recv: %s\n", message)
 			parsedMessage := parseMessage(fmt.Sprintf("%s", message))
 			if parsedMessage != nil {
 				switch parsedMessage.Command {
@@ -201,25 +201,25 @@ func (w *WebsocketHolder) Listen() {
 					if asUser == nil {
 						check, err := api.CheckTwitchUser(parsedMessage.Username)
 						if err != nil {
-							util.Config.Log.Errorln(err)
+							util.AppService.Log.Errorln(err)
 							return
 						}
 						if !check {
 							return
 						}
 
-						for _, v := range util.Config.Registration.Namespaces.UserIDs {
+						for _, v := range util.AppService.Registration.Namespaces.UserIDs {
 							// name magic
 							pre := strings.Split(v.Regex, ".+")[0]
 							suff := strings.Split(v.Regex, ".+")[1]
 							asUser = &user.ASUser{}
 							asUser.Mxid = pre + parsedMessage.Username + suff
-							util.Config.Log.Debugln(asUser.Mxid)
+							util.AppService.Log.Debugln(asUser.Mxid)
 							MXusername := strings.Split(strings.TrimPrefix(asUser.Mxid, "@"), ":")[0]
-							util.Config.Log.Debugln(MXusername)
-							client, err := gomatrix.NewClient(util.Config.HomeserverURL, asUser.Mxid, util.Config.Registration.AppToken)
+							util.AppService.Log.Debugln(MXusername)
+							client, err := gomatrix.NewClient(util.AppService.HomeserverURL, asUser.Mxid, util.AppService.Registration.AppToken)
 							if err != nil {
-								util.Config.Log.Errorln(err)
+								util.AppService.Log.Errorln(err)
 								return
 							}
 							asUser.MXClient = client
@@ -227,7 +227,7 @@ func (w *WebsocketHolder) Listen() {
 
 							err = matrix_helper.CreateUser(client, MXusername)
 							if err != nil {
-								util.Config.Log.Errorln(err)
+								util.AppService.Log.Errorln(err)
 								return
 							}
 
@@ -235,28 +235,28 @@ func (w *WebsocketHolder) Listen() {
 
 							userdata, err := api.RequestUserData(parsedMessage.Username)
 							if err != nil {
-								util.Config.Log.Errorln(err)
+								util.AppService.Log.Errorln(err)
 								return
 							}
 							if userdata.Total == 0 {
-								util.Config.Log.Errorln("user missing")
+								util.AppService.Log.Errorln("user missing")
 								return
 							}
 							err = client.SetDisplayName(userdata.Users[0].DisplayName + " (Twitch)")
 							if err != nil {
-								util.Config.Log.Errorln(err)
+								util.AppService.Log.Errorln(err)
 							}
 							var resp *gomatrix.RespMediaUpload
 							if userdata.Users[0].Logo != "" {
 								resp, err = client.UploadLink(userdata.Users[0].Logo)
 								if err != nil {
-									util.Config.Log.Errorln(err)
+									util.AppService.Log.Errorln(err)
 								}
 							}
 							if resp != nil && resp.ContentURI != "" {
 								err = client.SetAvatarURL(resp.ContentURI)
 								if err != nil {
-									util.Config.Log.Errorln(err)
+									util.AppService.Log.Errorln(err)
 								}
 							}
 
@@ -264,7 +264,7 @@ func (w *WebsocketHolder) Listen() {
 							w.Users[asUser.Mxid] = asUser
 							err = util.DB.SaveUser(w.TwitchUsers[parsedMessage.Username])
 							if err != nil {
-								util.Config.Log.Errorln(err)
+								util.AppService.Log.Errorln(err)
 							}
 							break
 						}
@@ -273,7 +273,7 @@ func (w *WebsocketHolder) Listen() {
 					// Check if user needs to join the room
 					joinedResp, err := util.BotUser.MXClient.JoinedMembers(room)
 					if err != nil {
-						util.Config.Log.Errorln(err)
+						util.AppService.Log.Errorln(err)
 						return
 					}
 					mxid := asUser.Mxid
@@ -283,10 +283,10 @@ func (w *WebsocketHolder) Listen() {
 
 					asUser.MXClient.SendText(room, parsedMessage.Message)
 				case "PING":
-					util.Config.Log.Debugln("[TWITCH]: Respond to Ping")
+					util.AppService.Log.Debugln("[TWITCH]: Respond to Ping")
 					w.Pong(parsedMessage.Message)
 				default:
-					util.Config.Log.Debugf("[TWITCH]: %+v\n", parsedMessage)
+					util.AppService.Log.Debugf("[TWITCH]: %+v\n", parsedMessage)
 				}
 			}
 		}

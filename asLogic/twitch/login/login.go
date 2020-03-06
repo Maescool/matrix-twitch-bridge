@@ -52,7 +52,7 @@ func SendLoginURL(ruser *user.RealUser) error {
 
 		u := util.BotUser.MXClient.BuildURL("rooms", ruser.Room, "invite")
 		resp := &gomatrix.RespInviteUser{}
-		_, err = util.BotUser.MXClient.MakeRequest("POST", u, inviteReq, &resp)
+		err = util.BotUser.MXClient.MakeRequest("POST", u, inviteReq, &resp)
 		if err != nil {
 			return err
 		}
@@ -94,7 +94,7 @@ func Callback(w http.ResponseWriter, r *http.Request) {
 	if state != "" && code != "" {
 		tok, err := conf.Exchange(ctx, code)
 		if err != nil {
-			util.Config.Log.Errorln(err)
+			util.AppService.Log.Errorln(err)
 			w.WriteHeader(http.StatusInternalServerError)
 		}
 		queryHandler.QueryHandler().RealUsers[state].TwitchTokenStruct = tok
@@ -107,11 +107,11 @@ func Callback(w http.ResponseWriter, r *http.Request) {
 		client := &http.Client{}
 		resp, err := client.Do(req)
 		if err != nil {
-			util.Config.Log.Errorln(err)
+			util.AppService.Log.Errorln(err)
 			w.WriteHeader(http.StatusInternalServerError)
 		}
 		if resp.Body == nil {
-			util.Config.Log.Errorln("Body is empty")
+			util.AppService.Log.Errorln("Body is empty")
 			w.WriteHeader(http.StatusInternalServerError)
 		}
 		defer resp.Body.Close()
@@ -120,20 +120,20 @@ func Callback(w http.ResponseWriter, r *http.Request) {
 
 		err = json.Unmarshal(body, &p)
 		if err != nil {
-			util.Config.Log.Errorln(err)
+			util.AppService.Log.Errorln(err)
 			w.WriteHeader(http.StatusInternalServerError)
 		}
 
-		util.Config.Log.Debugf("p: %+v\n", p)
+		util.AppService.Log.Debugf("p: %+v\n", p)
 
 		queryHandler.QueryHandler().RealUsers[state].TwitchName = p.Name
-		util.Config.Log.Debugln(p.Name)
+		util.AppService.Log.Debugln(p.Name)
 
 		util.DB.SaveUser(queryHandler.QueryHandler().RealUsers[state])
 
 		err = queryHandler.QueryHandler().RealUsers[state].TwitchWS.Connect(tok.AccessToken, p.Name)
 		if err != nil {
-			util.Config.Log.Errorln(err)
+			util.AppService.Log.Errorln(err)
 			w.WriteHeader(http.StatusInternalServerError)
 		}
 	}

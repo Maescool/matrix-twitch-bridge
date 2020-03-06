@@ -12,12 +12,13 @@ import (
 	"github.com/gorilla/mux"
 	"log"
 	"maunium.net/go/maulogger"
-	"maunium.net/go/mautrix-appservice-go"
+	"maunium.net/go/mautrix"
+	"maunium.net/go/mautrix-appservice"
 	"net/http"
 	"os"
 )
 
-// Init starts the interactive Config generator and exits
+// Init starts the interactive AppService generator and exits
 func Init() {
 	var boldGreen = color.New(color.FgGreen).Add(color.Bold)
 	appservice.GenerateRegistration("twitch", "appservice-twitch", true, true)
@@ -27,67 +28,67 @@ func Init() {
 func prepareRun() error {
 	var err error
 
-	util.Config, err = appservice.Load(util.CfgFile)
+	util.AppService, err = appservice.Load(util.CfgFile)
 	if err != nil {
 		return err
 	}
 
-	util.Config.Registration, err = appservice.LoadRegistration(util.Config.RegistrationPath)
+	util.AppService.Registration, err = appservice.LoadRegistration(util.AppService.RegistrationPath)
 
-	util.Config.Log = maulogger.Create()
-	util.Config.LogConfig.Configure(util.Config.Log)
-	util.Config.Log.Debugln("Logger initialized successfully.")
+	util.AppService.Log = maulogger.Create()
+	util.AppService.LogConfig.Configure(util.AppService.Log)
+	util.AppService.Log.Debugln("Logger initialized successfully.")
 
 	util.DB = &dbImpl.DB{}
 
-	util.Config.Log.Debugln("Creating queryHandler.")
+	util.AppService.Log.Debugln("Creating queryHandler.")
 	qHandler := queryHandler.QueryHandler()
 
-	util.Config.Log.Debugln("Loading Twitch Rooms from DB.")
+	util.AppService.Log.Debugln("Loading Twitch Rooms from DB.")
 	qHandler.TwitchRooms, err = util.DB.GetTwitchRooms()
 	if err != nil {
 		return err
 	}
 
-	util.Config.Log.Debugln("Loading Rooms from DB.")
+	util.AppService.Log.Debugln("Loading Rooms from DB.")
 	qHandler.Aliases, err = util.DB.GetRooms()
 	if err != nil {
 		return err
 	}
 
-	util.Config.Log.Debugln("Loading Twitch Users from DB.")
+	util.AppService.Log.Debugln("Loading Twitch Users from DB.")
 	qHandler.TwitchUsers, err = util.DB.GetTwitchUsers()
 	if err != nil {
 		return err
 	}
 
-	util.Config.Log.Debugln("Loading AS Users from DB.")
+	util.AppService.Log.Debugln("Loading AS Users from DB.")
 	qHandler.Users, err = util.DB.GetASUsers()
 	if err != nil {
 		return err
 	}
 
-	util.Config.Log.Debugln("Loading Real Users from DB.")
+	util.AppService.Log.Debugln("Loading Real Users from DB.")
 	qHandler.RealUsers, err = util.DB.GetRealUsers()
 	if err != nil {
 		return err
 	}
 
-	util.Config.Log.Debugln("Loading Bot User from DB.")
+	util.AppService.Log.Debugln("Loading Bot User from DB.")
 	util.BotUser, err = util.DB.GetBotUser()
 	if err != nil {
 		return err
 	}
 
-	util.Config.Log.Infoln("Init...")
-	util.Config.Log.Close()
-	_, err = util.Config.Init(qHandler)
+	util.AppService.Log.Infoln("Init...")
+
+	_, err = util.AppService.Init()
 	if err != nil {
 		log.Fatalln(err)
 	}
-	util.Config.Log.Infoln("Init Done...")
+	util.AppService.Log.Infoln("Init Done...")
 
-	util.Config.Log.Infoln("Starting public server...")
+	util.AppService.Log.Infoln("Starting public server...")
 	r := mux.NewRouter()
 	r.HandleFunc("/callback", login.Callback).Methods(http.MethodGet)
 
@@ -99,7 +100,7 @@ func prepareRun() error {
 			err = http.ListenAndServeTLS(util.Publicaddress, util.TLSCert, util.TLSKey, r)
 		}
 		if err != nil {
-			util.Config.Log.Fatalln("Error while listening:", err)
+			util.AppService.Log.Fatalln("Error while listening:", err)
 			os.Exit(1)
 		}
 	}()
@@ -114,9 +115,9 @@ func Run() error {
 		return err
 	}
 
-	util.Config.Log.Debugln("Start Connecting BotUser to Twitch as: ", util.BotUser.TwitchName)
+	util.AppService.Log.Debugln("Start Connecting BotUser to Twitch as: ", util.BotUser.TwitchName)
 
-	util.Config.Log.Debugln("Start letting BotUser listen to Twitch")
+	util.AppService.Log.Debugln("Start letting BotUser listen to Twitch")
 
 	for _, v := range queryHandler.QueryHandler().Aliases {
 		util.BotUser.Mux.Lock()
@@ -144,19 +145,19 @@ func Run() error {
 	go func() {
 		for {
 			select {
-			case event := <-util.Config.Events:
-				util.Config.Log.Debugln("Got Event")
+			case event := <-util.AppService.Events:
+				util.AppService.Log.Debugln("Got Event")
 				switch event.Type {
-				case "m.room.member":
-					if event.Content["membership"] == "join" {
+				case mautrix.StateMember:
+					if event.Content.Membership == mautrix.MembershipJoin {
 
 						qHandler := queryHandler.QueryHandler()
 						for _, v := range qHandler.Aliases {
 							if v.ID == event.RoomID {
-								if event.SenderID != util.BotUser.MXClient.UserID {
+								if event.Sender != util.BotUser.MXClient.UserID {
 									err = joinEventHandler(event)
 									if err != nil {
-										util.Config.Log.Errorln(err)
+										util.AppService.Log.Errorln(err)
 									}
 								}
 							}
@@ -164,14 +165,14 @@ func Run() error {
 						continue
 
 					}
-				case "m.room.message":
+				case mautrix.EventMessage:
 					qHandler := queryHandler.QueryHandler()
 					for _, v := range qHandler.Aliases {
 						if v.ID == event.RoomID {
-							if event.SenderID != util.BotUser.MXClient.UserID {
+							if event.Sender != util.BotUser.MXClient.UserID {
 								err = useEvent(event)
 								if err != nil {
-									util.Config.Log.Errorln(err)
+									util.AppService.Log.Errorln(err)
 								}
 							}
 						}
@@ -183,28 +184,28 @@ func Run() error {
 		}
 	}()
 
-	util.Config.Log.Infoln("Starting Appservice Server...")
-	util.Config.Listen()
+	util.AppService.Log.Infoln("Starting Appservice Server...")
+	util.AppService.Start()
 
 	select {}
 }
 
-func joinEventHandler(event appservice.Event) error {
+func joinEventHandler(event *mautrix.Event) error {
 	qHandler := queryHandler.QueryHandler()
-	mxUser := qHandler.RealUsers[event.SenderID]
-	asUser := qHandler.Users[event.SenderID]
-	util.Config.Log.Debugf("AS User: %+v\n", asUser)
-	if asUser != nil || util.BotUser.Mxid == event.SenderID {
+	mxUser := qHandler.RealUsers[event.Sender]
+	asUser := qHandler.Users[event.Sender]
+	util.AppService.Log.Debugf("AS User: %+v\n", asUser)
+	if asUser != nil || util.BotUser.Mxid == event.Sender {
 		return nil
 	}
 	if mxUser == nil {
-		util.Config.Log.Debugln("Creating new User")
+		util.AppService.Log.Debugln("Creating new User")
 
-		qHandler.RealUsers[event.SenderID] = &user.RealUser{}
-		mxUser := qHandler.RealUsers[event.SenderID]
-		mxUser.Mxid = event.SenderID
+		qHandler.RealUsers[event.Sender] = &user.RealUser{}
+		mxUser := qHandler.RealUsers[event.Sender]
+		mxUser.Mxid = event.Sender
 
-		util.Config.Log.Debugln("Let new User Login")
+		util.AppService.Log.Debugln("Let new User Login")
 		err := login.SendLoginURL(mxUser)
 		if err != nil {
 			return err
@@ -214,28 +215,28 @@ func joinEventHandler(event appservice.Event) error {
 	return nil
 }
 
-func useEvent(event appservice.Event) error {
+func useEvent(event *mautrix.Event) error {
 	qHandler := queryHandler.QueryHandler()
-	mxUser := qHandler.RealUsers[event.SenderID]
-	asUser := qHandler.Users[event.SenderID]
-	util.Config.Log.Debugf("AS User: %+v\n", asUser)
-	if asUser != nil || util.BotUser.Mxid == event.SenderID || mxUser == nil {
+	mxUser := qHandler.RealUsers[event.Sender]
+	asUser := qHandler.Users[event.Sender]
+	util.AppService.Log.Debugf("AS User: %+v\n", asUser)
+	if asUser != nil || util.BotUser.Mxid == event.Sender || mxUser == nil {
 		return nil
 	}
 
-	util.Config.Log.Infoln("Processing Event")
+	util.AppService.Log.Infoln("Processing Event")
 
-	util.Config.Log.Debugln("Check if Room of event is known")
+	util.AppService.Log.Debugln("Check if Room of event is known")
 	for _, v := range qHandler.Aliases {
 		if v.ID == event.RoomID {
 
-			util.Config.Log.Debugln("Check if we have already a open WS")
+			util.AppService.Log.Debugln("Check if we have already a open WS")
 			if mxUser.TwitchWS == nil {
-				util.Config.Log.Debugf("%+v\n", mxUser.TwitchTokenStruct)
+				util.AppService.Log.Debugf("%+v\n", mxUser.TwitchTokenStruct)
 				if mxUser.TwitchTokenStruct != nil && mxUser.TwitchTokenStruct.AccessToken != "" && mxUser.TwitchName != "" {
 					var err error
 
-					util.Config.Log.Debugln("Connect new WS to Twitch")
+					util.AppService.Log.Debugln("Connect new WS to Twitch")
 					v.TwitchWS = &wsImpl.WebsocketHolder{
 						Done:        make(chan struct{}),
 						TwitchRooms: queryHandler.QueryHandler().TwitchRooms,
@@ -253,19 +254,19 @@ func useEvent(event appservice.Event) error {
 				}
 			}
 
-			util.Config.Log.Debugln("Check if text or other Media")
-			if event.Content["msgtype"] == "m.text" {
-				util.Config.Log.Debugln("Send message to twitch")
+			util.AppService.Log.Debugln("Check if text or other Media")
+			if event.Content.MsgType == mautrix.MsgText {
+				util.AppService.Log.Debugln("Send message to twitch")
 
 				util.BotUser.Mux.Lock()
-				err := v.TwitchWS.Send(v.TwitchChannel, event.Content["body"].(string))
+				err := v.TwitchWS.Send(v.TwitchChannel, event.Content.Body)
 				util.BotUser.Mux.Unlock()
 				if err != nil {
 					return err
 				}
 			} else {
-				util.Config.Log.Debugln("Send message to bridge Room to tell user to use plain text")
-				resp, err := util.BotUser.MXClient.GetDisplayName(event.SenderID)
+				util.AppService.Log.Debugln("Send message to bridge Room to tell user to use plain text")
+				resp, err := util.BotUser.MXClient.GetDisplayName(event.Sender)
 				if err != nil {
 					return err
 				}

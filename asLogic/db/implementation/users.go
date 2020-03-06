@@ -16,19 +16,19 @@ import (
 
 // SaveUser saves a User struct to the Database
 func (d *DB) SaveUser(userA interface{}) error {
-	util.Config.Log.Debugln("Opening DB")
+	util.AppService.Log.Debugln("Opening DB")
 	if d.db == nil {
 		d.db = dbHelper.Open()
 	}
 
-	util.Config.Log.Debugln("Beginning DB transaction")
+	util.AppService.Log.Debugln("Beginning DB transaction")
 	tx, err := d.db.Begin()
 	if err != nil {
 		return err
 	}
 
-	util.Config.Log.Debugln("Prepare DB Statement")
-	stmt, err := tx.Prepare("INSERT INTO users (type, mxid, twitch_name, twitch_token, twitch_token_id) VALUES (?, ?, ?, ?, ?)")
+	util.AppService.Log.Debugln("Prepare DB Statement")
+	stmt, err := tx.Prepare("INSERT INTO users (`type`, `mxid`, `twitch_name`, `twitch_token`, `twitch_token_id`) VALUES (?, ?, ?, ?, ?)")
 	if err != nil {
 		return err
 	}
@@ -47,9 +47,9 @@ func (d *DB) SaveUser(userA interface{}) error {
 	case *user.RealUser:
 		mxid = v.Mxid
 		Type = "REAL"
-		util.Config.Log.Debugln(v.TwitchName)
+		util.AppService.Log.Debugln(v.TwitchName)
 		twitchName = v.TwitchName
-		util.Config.Log.Debugf("TwitchTokenStructSave: %+v", v.TwitchTokenStruct)
+		util.AppService.Log.Debugf("TwitchTokenStructSave: %+v", v.TwitchTokenStruct)
 		if v.TwitchTokenStruct != nil {
 			expiry, err := v.TwitchTokenStruct.Expiry.MarshalText()
 			if err != nil {
@@ -76,7 +76,7 @@ func (d *DB) SaveUser(userA interface{}) error {
 		return err
 	}
 
-	util.Config.Log.Debugln("Commit to DB")
+	util.AppService.Log.Debugln("Commit to DB")
 	err = tx.Commit()
 	return err
 }
@@ -118,7 +118,7 @@ func (d *DB) getUsers() (users *userTransportStruct, err error) {
 			transportStruct.ASUsers = append(transportStruct.ASUsers, ASUser)
 		case "REAL":
 			var TwitchToken *oauth2.Token
-			util.Config.Log.Debugf("twitchTokenID: %+v", twitchTokenID)
+			util.AppService.Log.Debugf("twitchTokenID: %+v", twitchTokenID)
 			if twitchTokenID.Valid {
 				var accessToken string
 				var tokenType string
@@ -139,7 +139,7 @@ func (d *DB) getUsers() (users *userTransportStruct, err error) {
 					TokenType:    tokenType,
 					RefreshToken: refreshToken,
 				}
-				util.Config.Log.Debugf("TwitchToken: %+v", TwitchToken)
+				util.AppService.Log.Debugf("TwitchToken: %+v", TwitchToken)
 				if expiry.Valid {
 					TwitchToken.Expiry = expiryTime
 				}
@@ -154,7 +154,7 @@ func (d *DB) getUsers() (users *userTransportStruct, err error) {
 				Users:       queryHandler.QueryHandler().Users,
 			}
 			if TwitchToken != nil {
-				util.Config.Log.Debugln("tName used for ws nick: ", twitchName)
+				util.AppService.Log.Debugln("tName used for ws nick: ", twitchName)
 				err = wsHolder.Connect(TwitchToken.AccessToken, twitchName)
 				if err != nil {
 					return nil, err
@@ -198,7 +198,7 @@ func (d *DB) GetASUsers() (map[string]*user.ASUser, error) {
 	}
 	for _, v := range dbResp.ASUsers {
 		if v.MXClient == nil {
-			client, err := gomatrix.NewClient(util.Config.HomeserverURL, v.Mxid, util.Config.Registration.AppToken)
+			client, err := gomatrix.NewClient(util.AppService.HomeserverURL, v.Mxid, util.AppService.Registration.AppToken)
 			if err != nil {
 				return nil, err
 			}
@@ -222,7 +222,7 @@ func (d *DB) GetTwitchUsers() (map[string]*user.ASUser, error) {
 	}
 	for _, v := range dbResp.ASUsers {
 		if v.MXClient == nil {
-			client, err := gomatrix.NewClient(util.Config.HomeserverURL, v.Mxid, util.Config.Registration.AppToken)
+			client, err := gomatrix.NewClient(util.AppService.HomeserverURL, v.Mxid, util.AppService.Registration.AppToken)
 			if err != nil {
 				return nil, err
 			}
@@ -260,7 +260,7 @@ func (d *DB) GetBotUser() (*user.BotUser, error) {
 	if len(dbResp.BotUsers) >= 1 {
 		bot := dbResp.BotUsers[0]
 
-		client, err := gomatrix.NewClient(util.Config.HomeserverURL, bot.Mxid, util.Config.Registration.AppToken)
+		client, err := gomatrix.NewClient(util.AppService.HomeserverURL, bot.Mxid, util.AppService.Registration.AppToken)
 		if err != nil {
 			return nil, err
 		}
@@ -270,31 +270,31 @@ func (d *DB) GetBotUser() (*user.BotUser, error) {
 		return bot, nil
 	}
 
-	var localpart = strings.TrimSuffix(strings.TrimPrefix(strings.Replace(util.Config.Registration.Namespaces.UserIDs[0].Regex, ".+", util.Config.Registration.SenderLocalpart, -1), "@"), ":"+util.Config.HomeserverDomain)
-	var userID = strings.Replace(util.Config.Registration.Namespaces.UserIDs[0].Regex, ".+", util.Config.Registration.SenderLocalpart, -1)
-	util.Config.Log.Debugln("Bot localpart: ", localpart)
+	var localpart = strings.TrimSuffix(strings.TrimPrefix(strings.Replace(util.AppService.Registration.Namespaces.UserIDs[0].Regex, ".+", util.AppService.Registration.SenderLocalpart, -1), "@"), ":"+util.AppService.HomeserverDomain)
+	var userID = strings.Replace(util.AppService.Registration.Namespaces.UserIDs[0].Regex, ".+", util.AppService.Registration.SenderLocalpart, -1)
+	util.AppService.Log.Debugln("Bot localpart: ", localpart)
 	botUser := &user.BotUser{
 		Mxid:        userID,
 		TwitchName:  util.BotUName,
 		TwitchToken: util.BotAToken,
 	}
 
-	util.Config.Log.Debugln("Creating gomatrix Client for the Bot User")
-	client, err := gomatrix.NewClient(util.Config.HomeserverURL, userID, util.Config.Registration.AppToken)
+	util.AppService.Log.Debugln("Creating gomatrix Client for the Bot User")
+	client, err := gomatrix.NewClient(util.AppService.HomeserverURL, userID, util.AppService.Registration.AppToken)
 	if err != nil {
 		return nil, err
 	}
 
-	util.Config.Log.Debugln("Creating Bot User on the HomeServer")
+	util.AppService.Log.Debugln("Creating Bot User on the HomeServer")
 	err = matrix_helper.CreateUser(client, localpart)
 	if err != nil {
 		return nil, err
 	}
 
-	util.Config.Log.Debugln("Adding Client to Bot Struct")
+	util.AppService.Log.Debugln("Adding Client to Bot Struct")
 	botUser.MXClient = client
 
-	util.Config.Log.Debugf("Saving Bot User to DB: %+v\n", botUser)
+	util.AppService.Log.Debugf("Saving Bot User to DB: %+v\n", botUser)
 	d.SaveUser(botUser)
 
 	return botUser, nil

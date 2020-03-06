@@ -39,9 +39,9 @@ func (q queryHandler) QueryAlias(alias string) bool {
 		return true
 	}
 	var tUsername string
-	client, err := gomatrix.NewClient(util.Config.HomeserverURL, "", util.Config.Registration.AppToken)
+	client, err := gomatrix.NewClient(util.AppService.HomeserverURL, "", util.AppService.Registration.AppToken)
 	if err != nil {
-		util.Config.Log.Errorln(err)
+		util.AppService.Log.Errorln(err)
 		return false
 	}
 
@@ -49,18 +49,18 @@ func (q queryHandler) QueryAlias(alias string) bool {
 
 	var displayname string
 	var logoURL string
-	for _, v := range util.Config.Registration.Namespaces.RoomAliases {
+	for _, v := range util.AppService.Registration.Namespaces.RoomAliases {
 		// name magic
 		pre := strings.Split(v.Regex, ".+")[0]
 		suff := strings.Split(v.Regex, ".+")[1]
 		tUsername = strings.TrimSuffix(strings.TrimPrefix(alias, pre), suff)
 		userdata, err := api.RequestUserData(tUsername)
 		if err != nil {
-			util.Config.Log.Errorln(err)
+			util.AppService.Log.Errorln(err)
 			return false
 		}
 		if userdata.Total == 0 {
-			util.Config.Log.Errorln("user missing")
+			util.AppService.Log.Errorln("user missing")
 			return false
 		}
 		displayname = userdata.Users[0].DisplayName
@@ -70,7 +70,7 @@ func (q queryHandler) QueryAlias(alias string) bool {
 
 	resp, err := matrix_helper.CreateRoom(client, displayname, logoURL, roomalias, "public_chat", false)
 	if err != nil {
-		util.Config.Log.Errorln(err)
+		util.AppService.Log.Errorln(err)
 		return false
 	}
 
@@ -85,7 +85,7 @@ func (q queryHandler) QueryAlias(alias string) bool {
 	q.TwitchRooms[troom.TwitchChannel] = troom.ID
 	err = util.DB.SaveRoom(troom)
 	if err != nil {
-		util.Config.Log.Errorln(err)
+		util.AppService.Log.Errorln(err)
 	}
 
 	util.BotUser.Mux.Lock()
@@ -101,7 +101,7 @@ func (q queryHandler) QueryAlias(alias string) bool {
 	err = q.Aliases[alias].TwitchWS.Join(tUsername)
 	util.BotUser.Mux.Unlock()
 	if err != nil {
-		util.Config.Log.Errorln(err)
+		util.AppService.Log.Errorln(err)
 	}
 	return true
 }
@@ -113,10 +113,10 @@ func (q queryHandler) QueryUser(userID string) bool {
 		return true
 	}
 	var tUsername string
-	for _, v := range util.Config.Registration.Namespaces.UserIDs {
+	for _, v := range util.AppService.Registration.Namespaces.UserIDs {
 		r, err := regexp.Compile(v.Regex)
 		if err != nil {
-			util.Config.Log.Errorln(err)
+			util.AppService.Log.Errorln(err)
 			return false
 		}
 		if r.MatchString(userID) {
@@ -127,7 +127,7 @@ func (q queryHandler) QueryUser(userID string) bool {
 
 	check, err := api.CheckTwitchUser(tUsername)
 	if err != nil {
-		util.Config.Log.Errorln(err)
+		util.AppService.Log.Errorln(err)
 		return false
 	}
 	if !check {
@@ -135,9 +135,9 @@ func (q queryHandler) QueryUser(userID string) bool {
 	}
 	asUser := user.ASUser{}
 	asUser.Mxid = userID
-	client, err := gomatrix.NewClient(util.Config.HomeserverURL, userID, util.Config.Registration.AppToken)
+	client, err := gomatrix.NewClient(util.AppService.HomeserverURL, userID, util.AppService.Registration.AppToken)
 	if err != nil {
-		util.Config.Log.Errorln(err)
+		util.AppService.Log.Errorln(err)
 		return false
 	}
 	asUser.MXClient = client
@@ -145,34 +145,34 @@ func (q queryHandler) QueryUser(userID string) bool {
 
 	err = matrix_helper.CreateUser(client, MXusername)
 	if err != nil {
-		util.Config.Log.Errorln(err)
+		util.AppService.Log.Errorln(err)
 		return false
 	}
 
 	client.AppServiceUserID = userID
 	userdata, err := api.RequestUserData(tUsername)
 	if err != nil {
-		util.Config.Log.Errorln(err)
+		util.AppService.Log.Errorln(err)
 		return false
 	}
 	if userdata.Total == 0 {
-		util.Config.Log.Errorln("user missing")
+		util.AppService.Log.Errorln("user missing")
 		return false
 	}
 	err = client.SetDisplayName(userdata.Users[0].DisplayName + " (Twitch)")
 	if err != nil {
-		util.Config.Log.Errorln(err)
+		util.AppService.Log.Errorln(err)
 	}
 	resp, err := client.UploadLink(userdata.Users[0].Logo)
 	err = client.SetAvatarURL(resp.ContentURI)
 	if err != nil {
-		util.Config.Log.Errorln(err)
+		util.AppService.Log.Errorln(err)
 	}
 
 	q.Users[userID] = &asUser
 	err = util.DB.SaveUser(q.Users[userID])
 	if err != nil {
-		util.Config.Log.Errorln(err)
+		util.AppService.Log.Errorln(err)
 		return false
 	}
 	return true
