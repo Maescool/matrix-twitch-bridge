@@ -3,7 +3,7 @@ package util
 import (
 	"github.com/Nordgedanken/matrix-twitch-bridge/asLogic/db"
 	"github.com/Nordgedanken/matrix-twitch-bridge/asLogic/user"
-	"maunium.net/go/mautrix-appservice"
+	"maunium.net/go/mautrix/appservice"
 )
 
 // AppService makes the appservice accessible everywhere in the Golang Code

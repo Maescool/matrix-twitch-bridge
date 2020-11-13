@@ -11,9 +11,9 @@ import (
 	"github.com/fatih/color"
 	"github.com/gorilla/mux"
 	"log"
-	"maunium.net/go/maulogger"
-	"maunium.net/go/mautrix"
-	"maunium.net/go/mautrix-appservice"
+	"maunium.net/go/maulogger/v2"
+	"maunium.net/go/mautrix/appservice"
+	"maunium.net/go/mautrix/event"
 	"net/http"
 	"os"
 )
@@ -21,7 +21,7 @@ import (
 // Init starts the interactive AppService generator and exits
 func Init() {
 	var boldGreen = color.New(color.FgGreen).Add(color.Bold)
-	appservice.GenerateRegistration("twitch", "appservice-twitch", true, true)
+	util.GenerateRegistration("twitch", "appservice-twitch", true, true)
 	boldGreen.Println("Please restart the Twitch-Appservice with \"--client_id\"-flag applied")
 }
 
@@ -145,17 +145,17 @@ func Run() error {
 	go func() {
 		for {
 			select {
-			case event := <-util.AppService.Events:
+			case e := <-util.AppService.Events:
 				util.AppService.Log.Debugln("Got Event")
-				switch event.Type {
-				case mautrix.StateMember:
-					if event.Content.Membership == mautrix.MembershipJoin {
+				switch e.Type {
+				case event.StateMember:
+					if e.Content.AsMember().Membership == event.MembershipJoin {
 
 						qHandler := queryHandler.QueryHandler()
 						for _, v := range qHandler.Aliases {
-							if v.ID == event.RoomID {
-								if event.Sender != util.BotUser.MXClient.UserID {
-									err = joinEventHandler(event)
+							if v.ID == e.RoomID.String() {
+								if e.Sender.String() != util.BotUser.MXClient.UserID {
+									err = joinEventHandler(e)
 									if err != nil {
 										util.AppService.Log.Errorln(err)
 									}
@@ -165,12 +165,12 @@ func Run() error {
 						continue
 
 					}
-				case mautrix.EventMessage:
+				case event.EventMessage:
 					qHandler := queryHandler.QueryHandler()
 					for _, v := range qHandler.Aliases {
-						if v.ID == event.RoomID {
-							if event.Sender != util.BotUser.MXClient.UserID {
-								err = useEvent(event)
+						if v.ID == e.RoomID.String() {
+							if e.Sender.String() != util.BotUser.MXClient.UserID {
+								err = useEvent(e)
 								if err != nil {
 									util.AppService.Log.Errorln(err)
 								}
@@ -190,20 +190,20 @@ func Run() error {
 	select {}
 }
 
-func joinEventHandler(event *mautrix.Event) error {
+func joinEventHandler(e *event.Event) error {
 	qHandler := queryHandler.QueryHandler()
-	mxUser := qHandler.RealUsers[event.Sender]
-	asUser := qHandler.Users[event.Sender]
+	mxUser := qHandler.RealUsers[e.Sender.String()]
+	asUser := qHandler.Users[e.Sender.String()]
 	util.AppService.Log.Debugf("AS User: %+v\n", asUser)
-	if asUser != nil || util.BotUser.Mxid == event.Sender {
+	if asUser != nil || util.BotUser.Mxid == e.Sender.String() {
 		return nil
 	}
 	if mxUser == nil {
 		util.AppService.Log.Debugln("Creating new User")
 
-		qHandler.RealUsers[event.Sender] = &user.RealUser{}
-		mxUser := qHandler.RealUsers[event.Sender]
-		mxUser.Mxid = event.Sender
+		qHandler.RealUsers[e.Sender.String()] = &user.RealUser{}
+		mxUser := qHandler.RealUsers[e.Sender.String()]
+		mxUser.Mxid = e.Sender.String()
 
 		util.AppService.Log.Debugln("Let new User Login")
 		err := login.SendLoginURL(mxUser)
@@ -215,20 +215,20 @@ func joinEventHandler(event *mautrix.Event) error {
 	return nil
 }
 
-func useEvent(event *mautrix.Event) error {
+func useEvent(e *event.Event) error {
 	qHandler := queryHandler.QueryHandler()
-	mxUser := qHandler.RealUsers[event.Sender]
-	asUser := qHandler.Users[event.Sender]
+	mxUser := qHandler.RealUsers[e.Sender.String()]
+	asUser := qHandler.Users[e.Sender.String()]
 	util.AppService.Log.Debugf("AS User: %+v\n", asUser)
-	if asUser != nil || util.BotUser.Mxid == event.Sender || mxUser == nil {
+	if asUser != nil || util.BotUser.Mxid == e.Sender.String() || mxUser == nil {
 		return nil
 	}
 
 	util.AppService.Log.Infoln("Processing Event")
 
-	util.AppService.Log.Debugln("Check if Room of event is known")
+	util.AppService.Log.Debugln("Check if Room of e is known")
 	for _, v := range qHandler.Aliases {
-		if v.ID == event.RoomID {
+		if v.ID == e.RoomID.String() {
 
 			util.AppService.Log.Debugln("Check if we have already a open WS")
 			if mxUser.TwitchWS == nil {
@@ -255,22 +255,22 @@ func useEvent(event *mautrix.Event) error {
 			}
 
 			util.AppService.Log.Debugln("Check if text or other Media")
-			if event.Content.MsgType == mautrix.MsgText {
+			if e.Content.AsMessage().MsgType == event.MsgText {
 				util.AppService.Log.Debugln("Send message to twitch")
 
 				util.BotUser.Mux.Lock()
-				err := v.TwitchWS.Send(v.TwitchChannel, event.Content.Body)
+				err := v.TwitchWS.Send(v.TwitchChannel, e.Content.AsMessage().Body)
 				util.BotUser.Mux.Unlock()
 				if err != nil {
 					return err
 				}
 			} else {
 				util.AppService.Log.Debugln("Send message to bridge Room to tell user to use plain text")
-				resp, err := util.BotUser.MXClient.GetDisplayName(event.Sender)
+				resp, err := util.BotUser.MXClient.GetDisplayName(e.Sender.String())
 				if err != nil {
 					return err
 				}
-				_, err = util.BotUser.MXClient.SendNotice(event.RoomID, resp.DisplayName+": Please use Text only as Twitch doesn't support any other Media Format!")
+				_, err = util.BotUser.MXClient.SendNotice(e.RoomID.String(), resp.DisplayName+": Please use Text only as Twitch doesn't support any other Media Format!")
 				if err != nil {
 					return err
 				}
